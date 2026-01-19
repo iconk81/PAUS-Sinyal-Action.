@@ -6,8 +6,7 @@ import requests
 import time
 
 # --- KONFIGURASI TELEGRAM ---
-# Pastikan Token dan Chat ID sudah benar
-TOKEN = "MASUKKAN_TOKEN_BOT_TELEGRAM_ANDA"
+TOKEN = "MASUKKAN_TOKEN_BOT_ANDA"
 CHAT_ID = "MASUKKAN_CHAT_ID_ANDA"
 
 def send_telegram(message):
@@ -20,24 +19,20 @@ def send_telegram(message):
 
 # --- KONEKSI GOOGLE SHEETS ---
 st.set_page_config(page_title="PAUS Action Monitor", layout="wide")
-
 scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 try:
-    # Mengambil key dari st.secrets (Streamlit Cloud)
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
     client = gspread.authorize(creds)
-    
-    # MEMBUKA TAB 2 (SUMMARY) sesuai saran struktur sebelumnya
+    # Membaca tab SUMMARY sesuai struktur Anda
     sheet = client.open("SINYAL SAHAM").worksheet("SUMMARY")
 except Exception as e:
     st.error(f"Koneksi GSheet Gagal: {e}")
     st.stop()
 
 st.title("🐋 PAUS Action Monitor")
-st.info("Memantau Tab: SUMMARY secara real-time")
+st.info("Mode: Fleksibel (Mendeteksi Kolom Action/ACTION)")
 
-# --- LOGIKA MONITORING ---
 if "last_row_count" not in st.session_state:
     st.session_state.last_row_count = len(sheet.get_all_values())
 
@@ -45,45 +40,44 @@ placeholder = st.empty()
 
 while True:
     try:
-        # Ambil semua data dari tab SUMMARY
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        current_row_count = len(df)
+        
+        # MENCARI KOLOM ACTION SECARA OTOMATIS (Case-Insensitive)
+        # Ini agar Anda tidak perlu ubah Google Sheet
+        target_col = None
+        for col in df.columns:
+            if col.lower() == 'action':
+                target_col = col
+                break
 
         with placeholder.container():
-            st.subheader("Sinyal Trading Terkini")
-            
-            # Cek apakah kolom 'ACTION' ada (huruf besar sesuai gambar)
-            if 'ACTION' in df.columns:
-                # Menampilkan 10 data terakhir yang memiliki status sinyal
-                display_df = df.tail(10)
-                st.dataframe(display_df, use_container_width=True)
+            if target_col:
+                st.subheader(f"Sinyal Terkini (Kolom: {target_col})")
+                st.dataframe(df.tail(15), use_container_width=True)
                 
-                # JIKA ADA BARIS BARU MASUK
+                current_row_count = len(df)
                 if current_row_count > st.session_state.last_row_count:
-                    new_data = df.iloc[-1] # Ambil baris paling bawah
+                    new_data = df.iloc[-1]
+                    status_aksi = str(new_data[target_col]).upper()
                     
-                    # Filter: Hanya kirim ke Telegram jika ACTION adalah ENTRY, HOLD, atau OPEN
-                    status_aksi = str(new_data['ACTION']).upper()
                     if status_aksi in ['ENTRY', 'HOLD', 'OPEN']:
-                        ticker = new_data.get('Ticker', 'Unknown')
-                        price = new_data.get('Price', '0')
-                        waktu = new_data.get('Timestamp', '-')
+                        ticker = new_data.get('Ticker', 'Stock')
+                        price = new_data.get('Current Price', new_data.get('Price', '0'))
                         
                         pesan = (f"🚀 *PAUS SIGNAL DETECTED*\n\n"
                                  f"Ticker: `{ticker}`\n"
                                  f"Action: *{status_aksi}*\n"
                                  f"Price: {price}\n"
-                                 f"Time: {waktu}")
-                        
+                                 f"Source: Tab SUMMARY")
                         send_telegram(pesan)
                     
                     st.session_state.last_row_count = current_row_count
             else:
-                st.error("Error: Kolom 'ACTION' tidak ditemukan. Pastikan header di tab SUMMARY sudah benar.")
+                st.error("Kolom 'Action' tidak ditemukan. Harap cek baris pertama Tab SUMMARY.")
 
     except Exception as e:
-        st.warning(f"Sedang sinkronisasi data... ({e})")
+        st.warning(f"Menunggu data baru... ({e})")
     
-    time.sleep(30) # Cek setiap 30 detik
+    time.sleep(30)
     st.rerun()
