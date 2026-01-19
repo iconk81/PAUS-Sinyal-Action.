@@ -31,39 +31,32 @@ except Exception as e:
     st.error(f"Koneksi GSheet Gagal: {e}")
     st.stop()
 
-# --- FUNGSI PEWARNAAN TABEL (DASHBOARD) ---
+# --- FUNGSI PEWARNAAN DASHBOARD ---
 def highlight_style(row):
     target_col = next((col for col in row.index if col.lower() == 'action'), None)
     ticker_col = next((col for col in row.index if col.lower() == 'ticker'), None)
-    
     styles = [''] * len(row)
     if target_col:
         status = str(row[target_col]).upper()
         idx_action = row.index.get_loc(target_col)
         idx_ticker = row.index.get_loc(ticker_col) if ticker_col else -1
-
         if status == 'ENTRY':
-            # Hijau Muda untuk Ticker dan Action
             color = 'background-color: #90EE90; color: black; font-weight: bold'
             styles[idx_action] = color
             if idx_ticker != -1: styles[idx_ticker] = color
-        elif status in ['HOLD', 'OPEN']:
-            color = 'background-color: #1E90FF; color: white'
-            styles[idx_action] = color
         elif status == 'EXIT':
-            # Merah untuk Ticker dan Action
             color = 'background-color: #FF4500; color: white; font-weight: bold'
             styles[idx_action] = color
             if idx_ticker != -1: styles[idx_ticker] = color
-            
     return styles
 
-st.title("🐋 PAUS Action Monitor v2.6")
+st.title("🐋 PAUS Action Monitor v2.9")
 
 if "last_row_count" not in st.session_state:
     try:
-        initial_data = sheet.get_all_records()
-        st.session_state.last_row_count = len(initial_data)
+        current_data = sheet.get_all_records()
+        # Set agar baris terakhir saat ini langsung jadi alert saat startup
+        st.session_state.last_row_count = len(current_data) - 1
     except:
         st.session_state.last_row_count = 0
 
@@ -88,35 +81,34 @@ while True:
                     
                     for _, row in new_rows.iterrows():
                         status_aksi = str(row[target_col]).upper()
-                        
                         if status_aksi in ['ENTRY', 'EXIT']:
                             ticker = row.get('Ticker', 'Stock')
                             price = row.get('Price Alert', row.get('Price', '0'))
-                            
                             wita_tz = pytz.timezone('Asia/Makassar')
                             timestamp = datetime.now(wita_tz).strftime("%Y-%m-%d %H:%M:%S")
                             
-                            # FORMAT PESAN SESUAI PERINTAH USER
+                            # SUSUNAN PESAN SESUAI PERMINTAAN TERAKHIR
                             if status_aksi == 'ENTRY':
-                                header_text = "👍🏻 PAUS ALERT: ENTRY"
+                                header = "👍🏻 PAUS ALERT: ENTRY"
+                                status_line = "🔵 ENTRY"
                             else:
-                                header_text = "👎 PAUS ALERT: EXIT"
+                                header = "👎 PAUS ALERT: EXIT"
+                                status_line = "🔴 EXIT"
                             
-                            pesan = (f"{header_text}\n"
+                            pesan = (f"*{header}*\n"
                                      f"Time : {timestamp} WITA\n"
                                      f"Ticker: {ticker}\n"
                                      f"Price: {price}\n"
-                                     f"Status : {status_aksi}")
+                                     f"Status : {status_line}")
                             
                             send_telegram(pesan)
-                            time.sleep(1)
                     
                     st.session_state.last_row_count = current_row_count
             else:
                 st.error("Kolom 'Action' tidak ditemukan.")
 
     except Exception as e:
-        st.warning(f"Menunggu sinkronisasi... ({e})")
+        st.warning(f"Menunggu sinkronisasi...")
     
     time.sleep(15)
     st.rerun()
