@@ -5,9 +5,9 @@ from google.oauth2.service_account import Credentials
 import requests
 import time
 from datetime import datetime
-import pytz # Tambahkan library zona waktu
+import pytz
 
-# --- KONFIGURASI TELEGRAM (DARI SECRETS) ---
+# --- KONFIGURASI TELEGRAM ---
 TOKEN = st.secrets["telegram"]["token"]
 CHAT_ID = st.secrets["telegram"]["chat_id"]
 
@@ -32,21 +32,22 @@ except Exception as e:
     st.stop()
 
 def color_rows(val):
-    color = ''
     s_val = str(val).upper()
-    if s_val == 'ENTRY':
-        color = 'background-color: #00FF00; color: black; font-weight: bold'
-    elif s_val in ['HOLD', 'OPEN']:
-        color = 'background-color: #1E90FF; color: white'
-    elif s_val == 'EXIT':
-        color = 'background-color: #FF4500; color: white; font-weight: bold'
-    return color
+    if s_val == 'ENTRY': return 'background-color: #00FF00; color: black; font-weight: bold'
+    if s_val in ['HOLD', 'OPEN']: return 'background-color: #1E90FF; color: white'
+    if s_val == 'EXIT': return 'background-color: #FF4500; color: white; font-weight: bold'
+    return ''
 
-st.title("🐋 PAUS Action Monitor v2.3")
-st.info("Zona Waktu: Asia/Makassar (WITA)")
+st.title("🐋 PAUS Action Monitor v2.4")
+st.info("Status: Monitoring Aktif (WITA) | Multi-Row Detection Enabled")
 
+# Inisialisasi last_row_count dengan jumlah data saat ini agar tidak spam saat start
 if "last_row_count" not in st.session_state:
-    st.session_state.last_row_count = 0
+    try:
+        initial_data = sheet.get_all_records()
+        st.session_state.last_row_count = len(initial_data)
+    except:
+        st.session_state.last_row_count = 0
 
 placeholder = st.empty()
 
@@ -64,35 +65,38 @@ while True:
                 
                 current_row_count = len(df)
                 
-                if current_row_count > st.session_state.last_row_count and st.session_state.last_row_count != 0:
-                    new_data = df.iloc[-1]
-                    status_aksi = str(new_data[target_col]).upper()
+                # JIKA ADA BARIS BARU (Bisa lebih dari satu baris)
+                if current_row_count > st.session_state.last_row_count:
+                    # Ambil semua baris baru mulai dari index terakhir yang tercatat
+                    new_rows = df.iloc[st.session_state.last_row_count : current_row_count]
                     
-                    if status_aksi in ['ENTRY', 'EXIT']:
-                        ticker = new_data.get('Ticker', 'Stock')
-                        price = new_data.get('Price Alert', new_data.get('Price', '0'))
+                    for _, row in new_rows.iterrows():
+                        status_aksi = str(row[target_col]).upper()
                         
-                        # LOGIKA ZONA WAKTU WITA
-                        wita_tz = pytz.timezone('Asia/Makassar')
-                        now_wita = datetime.now(wita_tz)
-                        timestamp = now_wita.strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        if status_aksi == 'ENTRY':
-                            icon = "🐂 BULL"
-                            header = f"🔵 *PAUS ALERT: {status_aksi}*"
-                        else:
-                            icon = "🐻 BEAR"
-                            header = f"🔴 *PAUS ALERT: {status_aksi}*"
-                        
-                        pesan = (f"{header}\n"
-                                 f"Time : `{timestamp} WITA`\n"
-                                 f"Ticker: *{ticker}* {icon}\n"
-                                 f"Price: `{price}`\n"
-                                 f"Status : *{status_aksi}*")
-                        
-                        send_telegram(pesan)
+                        if status_aksi in ['ENTRY', 'EXIT']:
+                            ticker = row.get('Ticker', 'Stock')
+                            price = row.get('Price Alert', row.get('Price', '0'))
+                            
+                            wita_tz = pytz.timezone('Asia/Makassar')
+                            timestamp = datetime.now(wita_tz).strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            if status_aksi == 'ENTRY':
+                                icon = "🐂 BULL"
+                                header = f"🔵 *PAUS ALERT: {status_aksi}*"
+                            else:
+                                icon = "🐻 BEAR"
+                                header = f"🔴 *PAUS ALERT: {status_aksi}*"
+                            
+                            pesan = (f"{header}\n"
+                                     f"Time : `{timestamp} WITA`\n"
+                                     f"Ticker: *{ticker}* {icon}\n"
+                                     f"Price: `{price}`\n"
+                                     f"Status : *{status_aksi}*")
+                            
+                            send_telegram(pesan)
+                            time.sleep(1) # Jeda antar pesan agar tidak diblokir Telegram
                     
-                st.session_state.last_row_count = current_row_count
+                    st.session_state.last_row_count = current_row_count
             else:
                 st.error("Kolom 'Action' tidak ditemukan.")
 
