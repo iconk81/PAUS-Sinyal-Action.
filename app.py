@@ -31,7 +31,7 @@ except Exception as e:
     st.error(f"Koneksi GSheet Gagal: {e}")
     st.stop()
 
-# --- FUNGSI PEWARNAAN TABEL DASHBOARD ---
+# --- FUNGSI PEWARNAAN TABEL (DASHBOARD) ---
 def highlight_style(row):
     target_col = next((col for col in row.index if col.lower() == 'action'), None)
     ticker_col = next((col for col in row.index if col.lower() == 'ticker'), None)
@@ -48,7 +48,6 @@ def highlight_style(row):
             styles[idx_action] = color
             if idx_ticker != -1: styles[idx_ticker] = color
         elif status in ['HOLD', 'OPEN']:
-            # Biru untuk Hold
             color = 'background-color: #1E90FF; color: white'
             styles[idx_action] = color
         elif status == 'EXIT':
@@ -60,9 +59,7 @@ def highlight_style(row):
     return styles
 
 st.title("🐋 PAUS Action Monitor v2.6")
-st.info("Status: WITA | Dashboard & Telegram Styled")
 
-# Inisialisasi last_row_count agar tidak spam data lama saat startup
 if "last_row_count" not in st.session_state:
     try:
         initial_data = sheet.get_all_records()
@@ -81,14 +78,12 @@ while True:
         with placeholder.container():
             if target_col:
                 st.subheader("📊 Live Trading Dashboard")
-                # Tampilan Tabel dengan warna pada Ticker dan Action
                 styled_df = df.tail(20).style.apply(highlight_style, axis=1)
                 st.dataframe(styled_df, use_container_width=True, height=500)
                 
                 current_row_count = len(df)
                 
                 if current_row_count > st.session_state.last_row_count:
-                    # Ambil semua data baru jika ada lebih dari 1 baris sekaligus
                     new_rows = df.iloc[st.session_state.last_row_count : current_row_count]
                     
                     for _, row in new_rows.iterrows():
@@ -96,29 +91,25 @@ while True:
                         
                         if status_aksi in ['ENTRY', 'EXIT']:
                             ticker = row.get('Ticker', 'Stock')
-                            # Prioritas ambil harga dari kolom 'Price Alert' atau 'Price'
                             price = row.get('Price Alert', row.get('Price', '0'))
                             
-                            # Setting Waktu WITA
                             wita_tz = pytz.timezone('Asia/Makassar')
                             timestamp = datetime.now(wita_tz).strftime("%Y-%m-%d %H:%M:%S")
                             
-                            # Format sesuai permintaan user
+                            # FORMAT PESAN SESUAI PERINTAH USER
                             if status_aksi == 'ENTRY':
-                                emoji_header = "👍🏻"
-                                alert_text = f"{emoji_header} PAUS ALERT: ENTRY"
+                                header_text = "👍🏻 PAUS ALERT: ENTRY"
                             else:
-                                emoji_header = "👎"
-                                alert_text = f"{emoji_header} PAUS ALERT: EXIT"
+                                header_text = "👎 PAUS ALERT: EXIT"
                             
-                            pesan = (f"*{alert_text}*\n"
+                            pesan = (f"{header_text}\n"
                                      f"Time : {timestamp} WITA\n"
                                      f"Ticker: {ticker}\n"
                                      f"Price: {price}\n"
                                      f"Status : {status_aksi}")
                             
                             send_telegram(pesan)
-                            time.sleep(1) # Jeda agar tidak dianggap spam oleh Telegram
+                            time.sleep(1)
                     
                     st.session_state.last_row_count = current_row_count
             else:
@@ -127,5 +118,5 @@ while True:
     except Exception as e:
         st.warning(f"Menunggu sinkronisasi... ({e})")
     
-    time.sleep(15) # Cek setiap 15 detik
+    time.sleep(15)
     st.rerun()
