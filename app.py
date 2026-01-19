@@ -4,9 +4,10 @@ import gspread
 from google.oauth2.service_account import Credentials
 import requests
 import time
+from datetime import datetime
+import pytz # Tambahkan library zona waktu
 
 # --- KONFIGURASI TELEGRAM (DARI SECRETS) ---
-# Mengambil data dari [telegram] di menu Secrets
 TOKEN = st.secrets["telegram"]["token"]
 CHAT_ID = st.secrets["telegram"]["chat_id"]
 
@@ -30,20 +31,19 @@ except Exception as e:
     st.error(f"Koneksi GSheet Gagal: {e}")
     st.stop()
 
-# --- FUNGSI PEWARNAAN TABEL ---
 def color_rows(val):
     color = ''
     s_val = str(val).upper()
     if s_val == 'ENTRY':
-        color = 'background-color: #00FF00; color: black; font-weight: bold' # HIJAU
+        color = 'background-color: #00FF00; color: black; font-weight: bold'
     elif s_val in ['HOLD', 'OPEN']:
-        color = 'background-color: #1E90FF; color: white' # BIRU
+        color = 'background-color: #1E90FF; color: white'
     elif s_val == 'EXIT':
-        color = 'background-color: #FF4500; color: white; font-weight: bold' # MERAH
+        color = 'background-color: #FF4500; color: white; font-weight: bold'
     return color
 
-st.title("🐋 PAUS Action Monitor v2.1")
-st.info("Keamanan: Rahasia Telegram kini dikelola via Streamlit Secrets.")
+st.title("🐋 PAUS Action Monitor v2.3")
+st.info("Zona Waktu: Asia/Makassar (WITA)")
 
 if "last_row_count" not in st.session_state:
     st.session_state.last_row_count = 0
@@ -59,23 +59,37 @@ while True:
         with placeholder.container():
             if target_col:
                 st.subheader("📊 Live Trading Dashboard")
-                # Menggunakan map sebagai pengganti applymap (Pandas terbaru)
                 styled_df = df.tail(20).style.map(color_rows, subset=[target_col])
                 st.dataframe(styled_df, use_container_width=True, height=500)
                 
                 current_row_count = len(df)
+                
                 if current_row_count > st.session_state.last_row_count and st.session_state.last_row_count != 0:
                     new_data = df.iloc[-1]
                     status_aksi = str(new_data[target_col]).upper()
                     
                     if status_aksi in ['ENTRY', 'EXIT']:
                         ticker = new_data.get('Ticker', 'Stock')
-                        price = new_data.get('Price', '0')
-                        icon = "🚀" if status_aksi == 'ENTRY' else "⚠️"
-                        pesan = (f"{icon} *PAUS ALERT: {status_aksi}*\n\n"
-                                 f"Ticker: `{ticker}`\n"
-                                 f"Price: {price}\n"
-                                 f"Status: {status_aksi}")
+                        price = new_data.get('Price Alert', new_data.get('Price', '0'))
+                        
+                        # LOGIKA ZONA WAKTU WITA
+                        wita_tz = pytz.timezone('Asia/Makassar')
+                        now_wita = datetime.now(wita_tz)
+                        timestamp = now_wita.strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        if status_aksi == 'ENTRY':
+                            icon = "🐂 BULL"
+                            header = f"🔵 *PAUS ALERT: {status_aksi}*"
+                        else:
+                            icon = "🐻 BEAR"
+                            header = f"🔴 *PAUS ALERT: {status_aksi}*"
+                        
+                        pesan = (f"{header}\n"
+                                 f"Time : `{timestamp} WITA`\n"
+                                 f"Ticker: *{ticker}* {icon}\n"
+                                 f"Price: `{price}`\n"
+                                 f"Status : *{status_aksi}*")
+                        
                         send_telegram(pesan)
                     
                 st.session_state.last_row_count = current_row_count
