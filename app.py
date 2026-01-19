@@ -31,17 +31,38 @@ except Exception as e:
     st.error(f"Koneksi GSheet Gagal: {e}")
     st.stop()
 
-def color_rows(val):
-    s_val = str(val).upper()
-    if s_val == 'ENTRY': return 'background-color: #00FF00; color: black; font-weight: bold'
-    if s_val in ['HOLD', 'OPEN']: return 'background-color: #1E90FF; color: white'
-    if s_val == 'EXIT': return 'background-color: #FF4500; color: white; font-weight: bold'
-    return ''
+# --- FUNGSI PEWARNAAN TABEL DASHBOARD ---
+def highlight_style(row):
+    target_col = next((col for col in row.index if col.lower() == 'action'), None)
+    ticker_col = next((col for col in row.index if col.lower() == 'ticker'), None)
+    
+    styles = [''] * len(row)
+    if target_col:
+        status = str(row[target_col]).upper()
+        idx_action = row.index.get_loc(target_col)
+        idx_ticker = row.index.get_loc(ticker_col) if ticker_col else -1
 
-st.title("🐋 PAUS Action Monitor v2.4")
-st.info("Status: Monitoring Aktif (WITA) | Multi-Row Detection Enabled")
+        if status == 'ENTRY':
+            # Hijau Muda untuk Ticker dan Action
+            color = 'background-color: #90EE90; color: black; font-weight: bold'
+            styles[idx_action] = color
+            if idx_ticker != -1: styles[idx_ticker] = color
+        elif status in ['HOLD', 'OPEN']:
+            # Biru untuk Hold
+            color = 'background-color: #1E90FF; color: white'
+            styles[idx_action] = color
+        elif status == 'EXIT':
+            # Merah untuk Ticker dan Action
+            color = 'background-color: #FF4500; color: white; font-weight: bold'
+            styles[idx_action] = color
+            if idx_ticker != -1: styles[idx_ticker] = color
+            
+    return styles
 
-# Inisialisasi last_row_count dengan jumlah data saat ini agar tidak spam saat start
+st.title("🐋 PAUS Action Monitor v2.6")
+st.info("Status: WITA | Dashboard & Telegram Styled")
+
+# Inisialisasi last_row_count agar tidak spam data lama saat startup
 if "last_row_count" not in st.session_state:
     try:
         initial_data = sheet.get_all_records()
@@ -60,14 +81,14 @@ while True:
         with placeholder.container():
             if target_col:
                 st.subheader("📊 Live Trading Dashboard")
-                styled_df = df.tail(20).style.map(color_rows, subset=[target_col])
+                # Tampilan Tabel dengan warna pada Ticker dan Action
+                styled_df = df.tail(20).style.apply(highlight_style, axis=1)
                 st.dataframe(styled_df, use_container_width=True, height=500)
                 
                 current_row_count = len(df)
                 
-                # JIKA ADA BARIS BARU (Bisa lebih dari satu baris)
                 if current_row_count > st.session_state.last_row_count:
-                    # Ambil semua baris baru mulai dari index terakhir yang tercatat
+                    # Ambil semua data baru jika ada lebih dari 1 baris sekaligus
                     new_rows = df.iloc[st.session_state.last_row_count : current_row_count]
                     
                     for _, row in new_rows.iterrows():
@@ -75,26 +96,29 @@ while True:
                         
                         if status_aksi in ['ENTRY', 'EXIT']:
                             ticker = row.get('Ticker', 'Stock')
+                            # Prioritas ambil harga dari kolom 'Price Alert' atau 'Price'
                             price = row.get('Price Alert', row.get('Price', '0'))
                             
+                            # Setting Waktu WITA
                             wita_tz = pytz.timezone('Asia/Makassar')
                             timestamp = datetime.now(wita_tz).strftime("%Y-%m-%d %H:%M:%S")
                             
+                            # Format sesuai permintaan user
                             if status_aksi == 'ENTRY':
-                                icon = "🐂 BULL"
-                                header = f"🔵 *PAUS ALERT: {status_aksi}*"
+                                emoji_header = "👍🏻"
+                                alert_text = f"{emoji_header} PAUS ALERT: ENTRY"
                             else:
-                                icon = "🐻 BEAR"
-                                header = f"🔴 *PAUS ALERT: {status_aksi}*"
+                                emoji_header = "👎"
+                                alert_text = f"{emoji_header} PAUS ALERT: EXIT"
                             
-                            pesan = (f"{header}\n"
-                                     f"Time : `{timestamp} WITA`\n"
-                                     f"Ticker: *{ticker}* {icon}\n"
-                                     f"Price: `{price}`\n"
-                                     f"Status : *{status_aksi}*")
+                            pesan = (f"*{alert_text}*\n"
+                                     f"Time : {timestamp} WITA\n"
+                                     f"Ticker: {ticker}\n"
+                                     f"Price: {price}\n"
+                                     f"Status : {status_aksi}")
                             
                             send_telegram(pesan)
-                            time.sleep(1) # Jeda antar pesan agar tidak diblokir Telegram
+                            time.sleep(1) # Jeda agar tidak dianggap spam oleh Telegram
                     
                     st.session_state.last_row_count = current_row_count
             else:
@@ -103,5 +127,5 @@ while True:
     except Exception as e:
         st.warning(f"Menunggu sinkronisasi... ({e})")
     
-    time.sleep(30)
+    time.sleep(15) # Cek setiap 15 detik
     st.rerun()
